@@ -30,6 +30,19 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;paddin
 .chip b{font-weight:800}
 .chip.red{color:var(--do)} .chip.amber{color:var(--delegate)}
 
+/* progress */
+.prog{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:10px 14px;margin-bottom:16px;box-shadow:var(--shadow)}
+.ring{position:relative;width:44px;height:44px;flex:none}
+.ring svg{width:44px;height:44px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:5}
+.ring .rb{stroke:var(--line)}
+.ring .rf{stroke:#5b7cfa;stroke-linecap:round;transition:stroke-dasharray .5s}
+.ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800}
+.pt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pt b{font-size:15px;font-weight:700}
+.pt small{font-size:12.5px;color:var(--muted)}
+.pt .red{color:var(--do);font-weight:600}
+
 /* matrix */
 .matrix{display:grid;grid-template-columns:16px 1fr 1fr;grid-template-rows:auto auto auto;gap:10px}
 .ax{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:center}
@@ -151,7 +164,9 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;paddin
     <div class="quick" id="fQuick">
       <button class="qk" data-quick="0">Сегодня</button>
       <button class="qk" data-quick="1">Завтра</button>
-      <button class="qk" data-quick="7">Через неделю</button>
+      <button class="qk" data-quick="2">Послезавтра</button>
+      <button class="qk" data-quick="7">Неделя</button>
+      <button class="qk" data-quick="m">Месяц</button>
       <button class="qk" data-quick="none">Без срока</button>
     </div>
     <div class="row">
@@ -206,8 +221,8 @@ async function load(){
   }
 }
 let saveT;
-function save(){ clearTimeout(saveT); saveT = setTimeout(doSave, 250); }
-async function doSave(){
+function save(){ clearTimeout(saveT); saveT = setTimeout(saveLocal, 250); scheduleSync(); }
+async function saveLocal(){
   const s = JSON.stringify(tasks);
   try { localStorage.setItem(KEY, s); } catch(e){}
   if (cloud()){
@@ -254,7 +269,7 @@ async function importInbox(){
     if (!id || !title || seen.has(id)) continue;
     seen.add(id); seenArr.push(id);
     if (tasks.some(t => t.id === id)) continue;
-    tasks.push({id, title:String(title), note:'', q:QC[qc] || 'do', date:date || '', time:date ? (time || '') : '', done:false, created:Date.now()});
+    tasks.push({id, title:String(title), note:'', q:QC[qc] || 'do', date:date || '', time:date ? (time || '') : '', done:false, created:Date.now(), updated:Date.now()});
     added++;
   }
   await saveSeen(seenArr);
@@ -266,10 +281,40 @@ function toast(msg){
   setTimeout(() => el.classList.remove('show'), 2600);
 }
 
+/* ---------- синхронизация с ботом ---------- */
+const API = 'https://matrix-bot.artemdadenov.workers.dev/api/tasks';
+const live = () => tasks.filter(t => !t.deleted);
+function tombstone(pred){
+  const now = Date.now();
+  tasks = tasks.map(t => !t.deleted && pred(t) ? {id:t.id, deleted:true, updated:now} : t);
+}
+let syncT, syncing = false;
+function scheduleSync(ms = 1200){ clearTimeout(syncT); syncT = setTimeout(sync, ms); }
+async function sync(){
+  if (!tg || !tg.initData || syncing) return;
+  syncing = true;
+  try{
+    const r = await fetch(API, {method:'POST', headers:{'Content-Type':'application/json','X-Init-Data':tg.initData}, body:JSON.stringify({tasks})});
+    if (r.ok){
+      const j = await r.json();
+      if (Array.isArray(j.tasks) && JSON.stringify(j.tasks) !== JSON.stringify(tasks)){
+        tasks = j.tasks; await saveLocal(); if (!isSheetOpen()) render();
+      }
+    }
+  }catch(e){ /* нет сети — попробуем позже */ }
+  syncing = false;
+}
+
 /* ---------- помощники ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2,'0');
+function quickDate(v){
+  const x = new Date();
+  if (v === 'm'){ const d = x.getDate(); x.setDate(1); x.setMonth(x.getMonth()+1); x.setDate(Math.min(d, new Date(x.getFullYear(), x.getMonth()+1, 0).getDate())); }
+  else x.setDate(x.getDate() + +v);
+  return ymd(x);
+}
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const plural = (n,a,b,c) => { n=Math.abs(n)%100; const n1=n%10; return n>10&&n<20?c:n1>1&&n1<5?b:n1===1?a:c; };
 const haptic = (t='light') => { try{ tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(t); }catch(e){} };
@@ -315,11 +360,30 @@ function taskHTML(t, withQ){
   </div>`;
 }
 
+function progressHTML(active, over){
+  const today = ymd(new Date());
+  const t0 = new Date(); t0.setHours(0,0,0,0);
+  const doneToday = live().filter(t => t.done && (t.doneAt || 0) >= t0.getTime()).length;
+  const dueOpen = active.filter(t => t.date && t.date <= today).length;
+  const total = doneToday + dueOpen;
+  const pct = total ? Math.round(doneToday / total * 100) : 100;
+  const week = live().filter(t => t.done && (t.doneAt || 0) >= Date.now() - 7*864e5).length;
+  const C = 2 * Math.PI * 18;
+  const sub = [
+    `${active.length} ${plural(active.length,'активная','активные','активных')}`,
+    over ? `<span class="red">${over} просрочено</span>` : '',
+    week ? `✓ ${week} за неделю` : ''
+  ].filter(Boolean).join(' · ');
+  return `<div class="prog">
+    <div class="ring"><svg viewBox="0 0 44 44"><circle class="rb" cx="22" cy="22" r="18"/><circle class="rf" cx="22" cy="22" r="18" style="stroke-dasharray:${(C*pct/100).toFixed(1)} 200"/></svg><span>${total ? pct + '%' : '✨'}</span></div>
+    <div class="pt"><b>${total ? (doneToday === total ? 'На сегодня всё сделано 🎉' : `Сегодня: ${doneToday} из ${total}`) : 'На сегодня дел нет'}</b><small>${sub}</small></div>
+  </div>`;
+}
+
 function renderMain(){
-  const active = tasks.filter(t => !t.done);
+  const active = live().filter(t => !t.done);
   const over = active.filter(isOver).length;
   const today = ymd(new Date());
-  const todayN = active.filter(t => t.date === today && !isOver(t)).length;
   const name = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.first_name : '';
   const h = new Date().getHours();
   const greet = h < 6 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
@@ -342,12 +406,7 @@ function renderMain(){
   $('app').innerHTML = `
     <div class="hello">${greet}${name ? ', ' + esc(name) : ''} · ${dateStr}</div>
     <div class="h1">Мои приоритеты</div>
-    <div class="stats">
-      <div class="chip"><b>${active.length}</b> ${plural(active.length,'задача','задачи','задач')}</div>
-      ${over ? `<div class="chip red">⚠️ <b>${over}</b> просрочено</div>` : ''}
-      ${todayN ? `<div class="chip amber">⏰ <b>${todayN}</b> на сегодня</div>` : ''}
-      ${!active.length ? `<div class="chip">✨ Всё чисто</div>` : ''}
-    </div>
+    ${progressHTML(active, over)}
     <div class="matrix">
       <div></div><div class="ax">Срочно</div><div class="ax">Не срочно</div>
       <div class="ax ax-l">Важно</div>${card(Q[0])}${card(Q[1])}
@@ -359,7 +418,7 @@ function renderMain(){
 
 function renderList(){
   const q = QM[view];
-  const all = tasks.filter(t => t.q === q.id).sort(sortT);
+  const all = live().filter(t => t.q === q.id).sort(sortT);
   const act = all.filter(t => !t.done), done = all.filter(t => t.done);
   const tips = {
     do:'Кризисы и горящие дедлайны. Делайте прямо сейчас.',
@@ -398,7 +457,7 @@ function markQuick(){
     const v = b.dataset.quick;
     let sel = false;
     if (v === 'none') sel = !d;
-    else { const x = new Date(now); x.setDate(x.getDate() + +v); sel = d === ymd(x); }
+    else sel = d === quickDate(v);
     b.classList.toggle('sel', sel);
   });
 }
@@ -424,12 +483,13 @@ function updSave(){ $('fSave').disabled = !$('fTitle').value.trim(); }
 function saveForm(){
   const title = $('fTitle').value.trim(); if (!title) return;
   const data = {title, note:$('fNote').value.trim(), q:form.q, date:$('fDate').value, time:$('fDate').value ? $('fTime').value : ''};
-  if (editing){ Object.assign(tasks.find(t => t.id === editing), data); }
+  data.updated = Date.now();
+  if (editing){ const t = tasks.find(t => t.id === editing); if (t.date !== data.date || t.time !== data.time) data.rem = 0; Object.assign(t, data); }
   else tasks.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), done:false, created:Date.now(), ...data});
   save(); notify(); closeSheet();
 }
 function delTask(id){
-  const go = () => { tasks = tasks.filter(t => t.id !== id); save(); notify('warning'); closeSheet(); };
+  const go = () => { tombstone(t => t.id === id); save(); notify('warning'); closeSheet(); };
   if (ver('6.2')) tg.showConfirm('Удалить задачу?', ok => ok && go()); else go();
 }
 
@@ -439,19 +499,19 @@ document.addEventListener('click', e => {
   if (!el) return;
   const d = el.dataset;
   if (d.open){ view = d.open; showDone = false; haptic(); render(); window.scrollTo(0,0); }
-  else if (d.check){ const t = tasks.find(x => x.id === d.check); t.done = !t.done; t.doneAt = t.done ? Date.now() : null; t.done ? notify() : haptic(); save(); render(); }
+  else if (d.check){ const t = tasks.find(x => x.id === d.check); t.done = !t.done; t.doneAt = t.done ? Date.now() : null; t.updated = Date.now(); t.done ? notify() : haptic(); save(); render(); }
   else if (d.edit){ haptic(); openSheet(d.edit); }
   else if (d.back !== undefined){ goBack(); }
   else if (d.pick){ form.q = d.pick; haptic(); renderQPick(); }
   else if (d.quick){
     haptic();
     if (d.quick === 'none'){ $('fDate').value = ''; $('fTime').value = ''; }
-    else { const x = new Date(); x.setDate(x.getDate() + +d.quick); $('fDate').value = ymd(x); }
+    else $('fDate').value = quickDate(d.quick);
     markQuick();
   }
   else if (d.toggleDone !== undefined){ showDone = !showDone; render(); }
   else if (d.clearDone !== undefined){
-    const go = () => { tasks = tasks.filter(t => !(t.q === view && t.done)); save(); render(); };
+    const go = () => { tombstone(t => t.q === view && t.done); save(); render(); };
     if (ver('6.2')) tg.showConfirm('Удалить все выполненные задачи в этом квадранте?', ok => ok && go()); else go();
   }
 });
@@ -481,7 +541,9 @@ function applyTheme(){
   const added = await importInbox();
   render();
   if (added){ notify(); toast(`📥 Из чата: +${added} ${plural(added,'задача','задачи','задач')}`); }
-  setInterval(() => { if (!isSheetOpen()) render(); }, 60000); // обновлять «сегодня/просрочено»
+  sync();
+  setInterval(() => { if (!isSheetOpen()) render(); sync(); }, 60000); // обновлять «сегодня/просрочено» и синхронизироваться
+  if (tg) tg.onEvent('activated', sync);
 })();
 </script>
 </body>
