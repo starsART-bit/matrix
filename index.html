@@ -77,7 +77,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;paddin
 .badge.over{background:color-mix(in srgb,var(--do) 16%,transparent);color:var(--do)}
 .badge.today{background:color-mix(in srgb,var(--delegate) 18%,transparent);color:#d98a00}
 .badge.soon{background:color-mix(in srgb,var(--plan) 15%,transparent);color:var(--plan)}
-.badge.q{background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
+.badge.qb{background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
 
 /* list view */
 .lh{display:flex;align-items:center;gap:12px;margin:4px 2px 18px}
@@ -126,11 +126,17 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;paddin
 .btn.primary{background:linear-gradient(135deg,#6d6bff,#3d8bfd);color:#fff}
 .btn.danger{flex:0 0 auto;padding:15px 18px;background:color-mix(in srgb,var(--do) 14%,transparent);color:var(--do)}
 .btn:disabled{opacity:.45}
+
+/* toast */
+.toast{position:fixed;left:50%;top:14px;transform:translate(-50%,-140%);z-index:30;background:var(--text);color:var(--bg);
+  font-size:14px;font-weight:700;padding:10px 16px;border-radius:999px;box-shadow:var(--shadow);transition:transform .35s cubic-bezier(.2,.8,.2,1);white-space:nowrap}
+.toast.show{transform:translate(-50%,0)}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <button class="fab" id="fab" aria-label="Добавить">+</button>
+<div class="toast" id="toast"></div>
 
 <div class="sheet" id="sheet">
   <div class="backdrop" id="backdrop"></div>
@@ -213,6 +219,53 @@ async function doSave(){
   }
 }
 
+/* ---------- задачи из чата с ботом ---------- */
+// Бот кладёт последние задачи в ссылку кнопки меню: ?inbox=<base64>.
+// Забираем новые, а их id запоминаем, чтобы не добавить повторно.
+const QC = {d:'do', p:'plan', g:'delegate', x:'drop'};
+const SEEN = 'eis_seen';
+function b64dec(s){
+  s = s.replace(/-/g,'+').replace(/_/g,'/'); while (s.length % 4) s += '=';
+  return new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0)));
+}
+async function loadSeen(){
+  let v = null;
+  if (cloud()){ try{ v = (await cGet([SEEN]))[SEEN]; }catch(e){} }
+  if (!v){ try{ v = localStorage.getItem(SEEN); }catch(e){} }
+  try { return JSON.parse(v || '[]'); } catch(e){ return []; }
+}
+async function saveSeen(arr){
+  const s = JSON.stringify(arr.slice(-250));
+  try{ localStorage.setItem(SEEN, s); }catch(e){}
+  if (cloud()) await cSet(SEEN, s);
+}
+async function importInbox(){
+  let items;
+  try{
+    const raw = new URLSearchParams(location.search).get('inbox');
+    if (!raw) return 0;
+    items = JSON.parse(b64dec(raw));
+    if (!Array.isArray(items)) return 0;
+  }catch(e){ return 0; }
+  const seenArr = await loadSeen(), seen = new Set(seenArr);
+  let added = 0;
+  for (const it of items){
+    const [id, title, qc, date, time] = it;
+    if (!id || !title || seen.has(id)) continue;
+    seen.add(id); seenArr.push(id);
+    if (tasks.some(t => t.id === id)) continue;
+    tasks.push({id, title:String(title), note:'', q:QC[qc] || 'do', date:date || '', time:date ? (time || '') : '', done:false, created:Date.now()});
+    added++;
+  }
+  await saveSeen(seenArr);
+  if (added) save();
+  return added;
+}
+function toast(msg){
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
 /* ---------- помощники ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -255,7 +308,7 @@ function taskHTML(t, withQ){
       <div class="t-title">${esc(t.title)}</div>
       ${t.note ? `<div class="t-note">${esc(t.note)}</div>` : ''}
       ${(dl||withQ) ? `<div class="t-meta">
-        ${withQ ? `<span class="badge q">${q.emoji} ${q.title}</span>` : ''}
+        ${withQ ? `<span class="badge qb">${q.emoji} ${q.title}</span>` : ''}
         ${dl ? `<span class="badge ${dl.cls}">⏰ ${dl.text}</span>` : ''}
       </div>` : ''}
     </button>
@@ -425,7 +478,9 @@ function applyTheme(){
     if (ver('6.1')) tg.BackButton.onClick(goBack);
   }
   await load();
+  const added = await importInbox();
   render();
+  if (added){ notify(); toast(`📥 Из чата: +${added} ${plural(added,'задача','задачи','задач')}`); }
   setInterval(() => { if (!isSheetOpen()) render(); }, 60000); // обновлять «сегодня/просрочено»
 })();
 </script>
