@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Матрица Эйзенхауэра</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#f3f4fa; --card:#ffffff; --text:#141726; --muted:#7b809a; --line:rgba(20,24,40,.08);
+  --shadow:0 6px 24px rgba(30,35,70,.08);
+  --do:#ff5a5f; --plan:#3d8bfd; --delegate:#f5a524; --drop:#9b7bf7;
+}
+[data-theme="dark"]{
+  --bg:#0e1016; --card:#171a23; --text:#f1f2f8; --muted:#8a8fa8; --line:rgba(255,255,255,.07);
+  --shadow:0 6px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Inter,sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+#app{padding:18px 14px calc(110px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+
+/* header */
+.hello{font-size:14px;color:var(--muted);margin:2px 2px 2px}
+.h1{font-size:26px;font-weight:750;letter-spacing:-.02em;margin:0 2px 14px}
+.stats{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.chip b{font-weight:800}
+.chip.red{color:var(--do)} .chip.amber{color:var(--delegate)}
+
+/* matrix */
+.matrix{display:grid;grid-template-columns:16px 1fr 1fr;grid-template-rows:auto auto auto;gap:10px}
+.ax{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:center}
+.ax-l{writing-mode:vertical-rl;transform:rotate(180deg);display:flex;align-items:center;justify-content:center}
+.q{position:relative;overflow:hidden;border-radius:22px;padding:14px 13px 12px;min-height:178px;text-align:left;
+  background:var(--card);
+  background:linear-gradient(155deg,color-mix(in srgb,var(--c) 20%,var(--card)) 0%,var(--card) 72%);
+  border:1px solid color-mix(in srgb,var(--c) 28%,transparent);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;transition:transform .15s}
+.q:active{transform:scale(.97)}
+.q::after{content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;
+  background:var(--c);opacity:.12;filter:blur(4px)}
+.q-head{display:flex;justify-content:space-between;align-items:center}
+.q-emoji{font-size:22px}
+.q-count{min-width:28px;height:28px;padding:0 8px;border-radius:999px;background:var(--c);color:#fff;
+  font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+.q-title{font-weight:750;font-size:15.5px;margin-top:10px;letter-spacing:-.01em}
+.q-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.q-prev{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:5px}
+.q-prev li{font-size:12.5px;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q-prev li span.t{overflow:hidden;text-overflow:ellipsis}
+.q-prev .empty{color:var(--muted);font-style:italic}
+.dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--c)}
+.dot.over{background:var(--do);box-shadow:0 0 0 3px color-mix(in srgb,var(--do) 25%,transparent)}
+.more{font-size:11.5px;color:var(--muted);margin-top:auto;padding-top:6px}
+
+/* hot section */
+.sec{margin:26px 2px 10px;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+/* tasks */
+.tasks{display:flex;flex-direction:column;gap:8px}
+.task{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);
+  border-radius:16px;padding:13px 14px;box-shadow:var(--shadow);animation:pop .2s ease}
+@keyframes pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.check{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--c);margin-top:1px;
+  display:flex;align-items:center;justify-content:center;transition:.15s}
+.task.done .check{background:var(--c)}
+.task.done .check::after{content:"";width:10px;height:5px;border:2.5px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.t-body{flex:1;min-width:0;text-align:left}
+.t-title{font-size:15px;font-weight:600;line-height:1.3;word-wrap:break-word}
+.task.done .t-title{text-decoration:line-through;color:var(--muted)}
+.t-note{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.35;word-wrap:break-word}
+.t-meta{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+.badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--line);color:var(--muted)}
+.badge.over{background:color-mix(in srgb,var(--do) 16%,transparent);color:var(--do)}
+.badge.today{background:color-mix(in srgb,var(--delegate) 18%,transparent);color:#d98a00}
+.badge.soon{background:color-mix(in srgb,var(--plan) 15%,transparent);color:var(--plan)}
+.badge.q{background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--c)}
+
+/* list view */
+.lh{display:flex;align-items:center;gap:12px;margin:4px 2px 18px}
+.lh .big{width:52px;height:52px;border-radius:16px;font-size:26px;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--c) 18%,var(--card));border:1px solid color-mix(in srgb,var(--c) 30%,transparent)}
+.lh h2{margin:0;font-size:22px;letter-spacing:-.02em}
+.lh p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.backbtn{font-size:15px;color:var(--plan);font-weight:600;margin:0 2px 12px;display:inline-block}
+.hint{font-size:13px;color:var(--muted);background:var(--card);border:1px dashed var(--line);border-radius:16px;padding:18px;text-align:center}
+.ghost{display:block;margin:16px auto 0;font-size:14px;color:var(--muted);font-weight:600;padding:8px 12px}
+
+/* FAB */
+.fab{position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:20px;
+  background:linear-gradient(135deg,#6d6bff,#3d8bfd);color:#fff;font-size:32px;font-weight:300;
+  box-shadow:0 10px 28px rgba(61,139,253,.45);display:flex;align-items:center;justify-content:center;z-index:5;transition:transform .15s}
+.fab:active{transform:scale(.92)}
+
+/* sheet */
+.sheet{position:fixed;inset:0;z-index:20;pointer-events:none}
+.sheet.open{pointer-events:auto}
+.backdrop{position:absolute;inset:0;background:rgba(10,12,20,.45);opacity:0;transition:opacity .25s}
+.sheet.open .backdrop{opacity:1}
+.panel{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow:auto;background:var(--card);
+  border-radius:24px 24px 0 0;padding:10px 16px calc(18px + env(safe-area-inset-bottom));
+  transform:translateY(105%);transition:transform .3s cubic-bezier(.2,.8,.2,1);max-width:640px;margin:0 auto}
+.sheet.open .panel{transform:none}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 12px}
+.panel h3{margin:0 0 14px;font-size:19px}
+.inp{width:100%;font:inherit;font-size:16px;color:var(--text);background:var(--bg);border:1px solid var(--line);
+  border-radius:14px;padding:13px 14px;outline:none;margin-bottom:10px;resize:none}
+.inp:focus{border-color:var(--plan)}
+.lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:8px 2px 8px}
+.qpick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.qopt{border:1.5px solid var(--line);border-radius:14px;padding:10px;text-align:left;display:flex;gap:8px;align-items:center;background:var(--bg)}
+.qopt .e{font-size:18px}
+.qopt .n{font-size:13.5px;font-weight:700;line-height:1.15}
+.qopt .s{font-size:11px;color:var(--muted)}
+.qopt.sel{border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--card))}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.qk{font-size:13px;font-weight:600;padding:7px 12px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
+.qk.sel{background:var(--plan);color:#fff;border-color:var(--plan)}
+.row{display:flex;gap:8px}
+.row .inp{flex:1;min-width:0}
+.acts{display:flex;gap:8px;margin-top:8px}
+.btn{flex:1;padding:15px;border-radius:16px;font-weight:700;font-size:16px}
+.btn.primary{background:linear-gradient(135deg,#6d6bff,#3d8bfd);color:#fff}
+.btn.danger{flex:0 0 auto;padding:15px 18px;background:color-mix(in srgb,var(--do) 14%,transparent);color:var(--do)}
+.btn:disabled{opacity:.45}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<button class="fab" id="fab" aria-label="Добавить">+</button>
+
+<div class="sheet" id="sheet">
+  <div class="backdrop" id="backdrop"></div>
+  <div class="panel">
+    <div class="grab"></div>
+    <h3 id="sTitle">Новая задача</h3>
+    <input class="inp" id="fTitle" placeholder="Что нужно сделать?" maxlength="140" autocomplete="off">
+    <textarea class="inp" id="fNote" rows="2" placeholder="Заметка (необязательно)" maxlength="500"></textarea>
+    <div class="lbl">Квадрант</div>
+    <div class="qpick" id="fQ"></div>
+    <div class="lbl">Дедлайн</div>
+    <div class="quick" id="fQuick">
+      <button class="qk" data-quick="0">Сегодня</button>
+      <button class="qk" data-quick="1">Завтра</button>
+      <button class="qk" data-quick="7">Через неделю</button>
+      <button class="qk" data-quick="none">Без срока</button>
+    </div>
+    <div class="row">
+      <input class="inp" type="date" id="fDate">
+      <input class="inp" type="time" id="fTime">
+    </div>
+    <div class="acts">
+      <button class="btn danger" id="fDel">Удалить</button>
+      <button class="btn primary" id="fSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData !== undefined ? window.Telegram.WebApp : null;
+const ver = v => !!(tg && tg.isVersionAtLeast && tg.isVersionAtLeast(v));
+
+const Q = [
+  {id:'do',       title:'Сделать сейчас', sub:'Срочно · Важно',        emoji:'🔥', c:'var(--do)'},
+  {id:'plan',     title:'Запланировать',  sub:'Не срочно · Важно',     emoji:'🎯', c:'var(--plan)'},
+  {id:'delegate', title:'Делегировать',   sub:'Срочно · Не важно',     emoji:'🤝', c:'var(--delegate)'},
+  {id:'drop',     title:'Отложить',       sub:'Не срочно · Не важно',  emoji:'🌙', c:'var(--drop)'},
+];
+const QM = Object.fromEntries(Q.map(q=>[q.id,q]));
+
+let tasks = [];
+let view = null;       // id квадранта или null (главный экран)
+let editing = null;    // id редактируемой задачи
+let showDone = false;
+let form = {q:'do'};
+
+/* ---------- хранение ---------- */
+const KEY = 'eis_tasks', CHUNK = 4000;
+const cloud = () => ver('6.9') && tg.CloudStorage;
+const cGet = keys => new Promise(r => tg.CloudStorage.getItems(keys, (e,v) => r(e ? {} : (v||{}))));
+const cSet = (k,v) => new Promise(r => tg.CloudStorage.setItem(k, v, () => r()));
+
+async function load(){
+  let local = [];
+  try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(e){}
+  tasks = local;
+  if (cloud()){
+    try{
+      const m = await cGet([KEY+'_n']);
+      const n = parseInt(m[KEY+'_n'] || '0', 10);
+      if (n > 0){
+        const keys = Array.from({length:n}, (_,i) => KEY+'_'+i);
+        const v = await cGet(keys);
+        tasks = JSON.parse(keys.map(k => v[k] || '').join(''));
+      }
+    }catch(e){ tasks = local; }
+  }
+}
+let saveT;
+function save(){ clearTimeout(saveT); saveT = setTimeout(doSave, 250); }
+async function doSave(){
+  const s = JSON.stringify(tasks);
+  try { localStorage.setItem(KEY, s); } catch(e){}
+  if (cloud()){
+    const parts = [];
+    for (let i = 0; i < s.length; i += CHUNK) parts.push(s.slice(i, i+CHUNK));
+    if (!parts.length) parts.push('[]');
+    for (let i = 0; i < parts.length; i++) await cSet(KEY+'_'+i, parts[i]);
+    await cSet(KEY+'_n', String(parts.length));
+  }
+}
+
+/* ---------- помощники ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const plural = (n,a,b,c) => { n=Math.abs(n)%100; const n1=n%10; return n>10&&n<20?c:n1>1&&n1<5?b:n1===1?a:c; };
+const haptic = (t='light') => { try{ tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(t); }catch(e){} };
+const notify = (t='success') => { try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(t); }catch(e){} };
+
+function dueDate(t){ return t.date ? new Date(t.date + 'T' + (t.time || '23:59')) : null; }
+function deadline(t){
+  const d = dueDate(t); if (!d) return null;
+  const now = new Date();
+  const t0 = new Date(); t0.setHours(0,0,0,0);
+  const dd = new Date(d); dd.setHours(0,0,0,0);
+  const days = Math.round((dd - t0) / 86400000);
+  const tm = t.time ? ', ' + t.time : '';
+  const date = d.toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
+  if (!t.done && d < now) return {cls:'over', text: days===0 ? 'Просрочено' + tm : 'Просрочено · ' + date};
+  if (days === 0) return {cls:'today', text:'Сегодня' + tm};
+  if (days === 1) return {cls:'soon', text:'Завтра' + tm};
+  if (days > 1 && days < 7) return {cls:'soon', text:`Через ${days} ${plural(days,'день','дня','дней')}`};
+  return {cls:'', text: date + tm};
+}
+function isOver(t){ const d = dueDate(t); return !t.done && d && d < new Date(); }
+function sortT(a,b){
+  if (a.done !== b.done) return a.done ? 1 : -1;
+  const da = dueDate(a), db = dueDate(b);
+  if (da && db) return da - db;
+  if (da) return -1; if (db) return 1;
+  return b.created - a.created;
+}
+
+/* ---------- отрисовка ---------- */
+function taskHTML(t, withQ){
+  const q = QM[t.q], dl = deadline(t);
+  return `<div class="task ${t.done?'done':''}" style="--c:${q.c}">
+    <button class="check" data-check="${t.id}" aria-label="Готово"></button>
+    <button class="t-body" data-edit="${t.id}">
+      <div class="t-title">${esc(t.title)}</div>
+      ${t.note ? `<div class="t-note">${esc(t.note)}</div>` : ''}
+      ${(dl||withQ) ? `<div class="t-meta">
+        ${withQ ? `<span class="badge q">${q.emoji} ${q.title}</span>` : ''}
+        ${dl ? `<span class="badge ${dl.cls}">⏰ ${dl.text}</span>` : ''}
+      </div>` : ''}
+    </button>
+  </div>`;
+}
+
+function renderMain(){
+  const active = tasks.filter(t => !t.done);
+  const over = active.filter(isOver).length;
+  const today = ymd(new Date());
+  const todayN = active.filter(t => t.date === today && !isOver(t)).length;
+  const name = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.first_name : '';
+  const h = new Date().getHours();
+  const greet = h < 6 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+  const dateStr = new Date().toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'long'});
+
+  const card = q => {
+    const list = active.filter(t => t.q === q.id).sort(sortT);
+    return `<button class="q" style="--c:${q.c}" data-open="${q.id}">
+      <div class="q-head"><span class="q-emoji">${q.emoji}</span><span class="q-count">${list.length}</span></div>
+      <div class="q-title">${q.title}</div>
+      <div class="q-sub">${q.sub}</div>
+      <ul class="q-prev">${list.slice(0,3).map(t => `<li><span class="dot ${isOver(t)?'over':''}"></span><span class="t">${esc(t.title)}</span></li>`).join('') || '<li class="empty">Пока пусто</li>'}</ul>
+      ${list.length > 3 ? `<div class="more">и ещё ${list.length-3}</div>` : ''}
+    </button>`;
+  };
+
+  const now = new Date(), soon = new Date(now.getTime() + 48*3600*1000);
+  const hot = active.filter(t => { const d = dueDate(t); return d && d < soon; }).sort(sortT);
+
+  $('app').innerHTML = `
+    <div class="hello">${greet}${name ? ', ' + esc(name) : ''} · ${dateStr}</div>
+    <div class="h1">Мои приоритеты</div>
+    <div class="stats">
+      <div class="chip"><b>${active.length}</b> ${plural(active.length,'задача','задачи','задач')}</div>
+      ${over ? `<div class="chip red">⚠️ <b>${over}</b> просрочено</div>` : ''}
+      ${todayN ? `<div class="chip amber">⏰ <b>${todayN}</b> на сегодня</div>` : ''}
+      ${!active.length ? `<div class="chip">✨ Всё чисто</div>` : ''}
+    </div>
+    <div class="matrix">
+      <div></div><div class="ax">Срочно</div><div class="ax">Не срочно</div>
+      <div class="ax ax-l">Важно</div>${card(Q[0])}${card(Q[1])}
+      <div class="ax ax-l">Не важно</div>${card(Q[2])}${card(Q[3])}
+    </div>
+    ${hot.length ? `<div class="sec">🔥 Горящие дедлайны</div><div class="tasks">${hot.map(t => taskHTML(t, true)).join('')}</div>` : ''}
+  `;
+}
+
+function renderList(){
+  const q = QM[view];
+  const all = tasks.filter(t => t.q === q.id).sort(sortT);
+  const act = all.filter(t => !t.done), done = all.filter(t => t.done);
+  const tips = {
+    do:'Кризисы и горящие дедлайны. Делайте прямо сейчас.',
+    plan:'Цели, развитие, здоровье. Выделите время в календаре.',
+    delegate:'Отвлекает, но требует реакции. Можно поручить кому-то.',
+    drop:'Пожиратели времени. Отложите или вычеркните.'
+  };
+  $('app').innerHTML = `
+    ${ver('6.1') ? '' : `<button class="backbtn" data-back>‹ Матрица</button>`}
+    <div class="lh" style="--c:${q.c}">
+      <div class="big">${q.emoji}</div>
+      <div><h2>${q.title}</h2><p>${q.sub} · ${act.length} ${plural(act.length,'активная','активные','активных')}</p></div>
+    </div>
+    <div class="tasks">
+      ${act.map(t => taskHTML(t)).join('') || `<div class="hint">${tips[q.id]}<br><br>Нажмите «+», чтобы добавить задачу.</div>`}
+    </div>
+    ${done.length ? `<button class="ghost" data-toggle-done>${showDone ? 'Скрыть' : 'Показать'} выполненные (${done.length})</button>` : ''}
+    ${showDone && done.length ? `<div class="tasks">${done.map(t => taskHTML(t)).join('')}</div>
+      <button class="ghost" data-clear-done style="color:var(--do)">Удалить выполненные</button>` : ''}
+  `;
+}
+
+function render(){
+  view ? renderList() : renderMain();
+  if (ver('6.1')) (view || isSheetOpen()) ? tg.BackButton.show() : tg.BackButton.hide();
+}
+
+/* ---------- форма ---------- */
+function renderQPick(){
+  $('fQ').innerHTML = Q.map(q => `<button class="qopt ${form.q===q.id?'sel':''}" style="--c:${q.c}" data-pick="${q.id}">
+    <span class="e">${q.emoji}</span><span><div class="n">${q.title}</div><div class="s">${q.sub}</div></span></button>`).join('');
+}
+function markQuick(){
+  const d = $('fDate').value, now = new Date();
+  document.querySelectorAll('[data-quick]').forEach(b => {
+    const v = b.dataset.quick;
+    let sel = false;
+    if (v === 'none') sel = !d;
+    else { const x = new Date(now); x.setDate(x.getDate() + +v); sel = d === ymd(x); }
+    b.classList.toggle('sel', sel);
+  });
+}
+const isSheetOpen = () => $('sheet').classList.contains('open');
+function openSheet(id, presetQ){
+  editing = id || null;
+  const t = id ? tasks.find(x => x.id === id) : null;
+  $('sTitle').textContent = t ? 'Редактировать' : 'Новая задача';
+  $('fTitle').value = t ? t.title : '';
+  $('fNote').value = t ? (t.note || '') : '';
+  $('fDate').value = t ? (t.date || '') : '';
+  $('fTime').value = t ? (t.time || '') : '';
+  form.q = t ? t.q : (presetQ || view || 'do');
+  $('fDel').style.display = t ? '' : 'none';
+  renderQPick(); markQuick(); updSave();
+  $('sheet').classList.add('open');
+  if (!t) setTimeout(() => $('fTitle').focus(), 300);
+  render();
+}
+function closeSheet(){ $('sheet').classList.remove('open'); document.activeElement && document.activeElement.blur(); render(); }
+function updSave(){ $('fSave').disabled = !$('fTitle').value.trim(); }
+
+function saveForm(){
+  const title = $('fTitle').value.trim(); if (!title) return;
+  const data = {title, note:$('fNote').value.trim(), q:form.q, date:$('fDate').value, time:$('fDate').value ? $('fTime').value : ''};
+  if (editing){ Object.assign(tasks.find(t => t.id === editing), data); }
+  else tasks.push({id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), done:false, created:Date.now(), ...data});
+  save(); notify(); closeSheet();
+}
+function delTask(id){
+  const go = () => { tasks = tasks.filter(t => t.id !== id); save(); notify('warning'); closeSheet(); };
+  if (ver('6.2')) tg.showConfirm('Удалить задачу?', ok => ok && go()); else go();
+}
+
+/* ---------- события ---------- */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-open],[data-check],[data-edit],[data-back],[data-pick],[data-quick],[data-toggle-done],[data-clear-done]');
+  if (!el) return;
+  const d = el.dataset;
+  if (d.open){ view = d.open; showDone = false; haptic(); render(); window.scrollTo(0,0); }
+  else if (d.check){ const t = tasks.find(x => x.id === d.check); t.done = !t.done; t.doneAt = t.done ? Date.now() : null; t.done ? notify() : haptic(); save(); render(); }
+  else if (d.edit){ haptic(); openSheet(d.edit); }
+  else if (d.back !== undefined){ goBack(); }
+  else if (d.pick){ form.q = d.pick; haptic(); renderQPick(); }
+  else if (d.quick){
+    haptic();
+    if (d.quick === 'none'){ $('fDate').value = ''; $('fTime').value = ''; }
+    else { const x = new Date(); x.setDate(x.getDate() + +d.quick); $('fDate').value = ymd(x); }
+    markQuick();
+  }
+  else if (d.toggleDone !== undefined){ showDone = !showDone; render(); }
+  else if (d.clearDone !== undefined){
+    const go = () => { tasks = tasks.filter(t => !(t.q === view && t.done)); save(); render(); };
+    if (ver('6.2')) tg.showConfirm('Удалить все выполненные задачи в этом квадранте?', ok => ok && go()); else go();
+  }
+});
+function goBack(){ if (isSheetOpen()) closeSheet(); else if (view){ view = null; render(); } }
+$('fab').onclick = () => { haptic('medium'); openSheet(null); };
+$('backdrop').onclick = closeSheet;
+$('fSave').onclick = saveForm;
+$('fDel').onclick = () => delTask(editing);
+$('fTitle').oninput = updSave;
+$('fTitle').onkeydown = e => { if (e.key === 'Enter') saveForm(); };
+$('fDate').onchange = markQuick;
+
+/* ---------- тема и запуск ---------- */
+function applyTheme(){
+  const dark = tg && tg.colorScheme ? tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  if (ver('6.1')){ const bg = dark ? '#0e1016' : '#f3f4fa'; try{ tg.setHeaderColor(bg); tg.setBackgroundColor(bg); }catch(e){} }
+}
+(async function init(){
+  applyTheme();
+  if (tg){
+    tg.ready(); tg.expand();
+    tg.onEvent('themeChanged', applyTheme);
+    if (ver('6.1')) tg.BackButton.onClick(goBack);
+  }
+  await load();
+  render();
+  setInterval(() => { if (!isSheetOpen()) render(); }, 60000); // обновлять «сегодня/просрочено»
+})();
+</script>
+</body>
+</html>
